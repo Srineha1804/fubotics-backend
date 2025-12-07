@@ -2,7 +2,7 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const sqlite3 = require("sqlite3").verbose();
+const Database = require("better-sqlite3");
 const axios = require("axios");
 
 // ------------------- Load .env -------------------
@@ -21,29 +21,29 @@ app.use(cors());
 app.use(express.json());
 
 // ------------------- Database setup -------------------
-const db = new sqlite3.Database("./chat.db", (err) => {
-    if (err) console.error("DB Error:", err);
-    else console.log("✅ Connected to SQLite database");
-});
+const db = new Database("chat.db");
 
 // Create messages table if it doesn't exist
-db.run(`
+db.prepare(`
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
-`);
+`).run();
 
 // ------------------- Routes -------------------
 
 // Get chat history
 app.get("/history", (req, res) => {
-    db.all("SELECT * FROM messages ORDER BY id ASC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: "DB read error" });
+    try {
+        const rows = db.prepare("SELECT * FROM messages ORDER BY id ASC").all();
         res.json(rows);
-    });
+    } catch (err) {
+        console.error("DB read error:", err);
+        res.status(500).json({ error: "DB read error" });
+    }
 });
 
 // Send chat message
@@ -53,7 +53,7 @@ app.post("/chat", async (req, res) => {
     if (!userMsg) return res.status(400).json({ error: "Message required" });
 
     // Save user message
-    db.run("INSERT INTO messages (role, content) VALUES (?, ?)", ["user", userMsg]);
+    db.prepare("INSERT INTO messages (role, content) VALUES (?, ?)").run("user", userMsg);
 
     let aiReply = "";
 
@@ -85,7 +85,7 @@ app.post("/chat", async (req, res) => {
     }
 
     // Save AI reply
-    db.run("INSERT INTO messages (role, content) VALUES (?, ?)", ["ai", aiReply]);
+    db.prepare("INSERT INTO messages (role, content) VALUES (?, ?)").run("ai", aiReply);
 
     res.json({ user: userMsg, ai: aiReply });
 });
